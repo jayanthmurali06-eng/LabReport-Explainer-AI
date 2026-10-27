@@ -1,0 +1,148 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LabReport Explainer AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header class="navbar">
+        <a class="brand" href="/">LabReport <span>Explainer AI</span></a>
+        <span class="status">Educational tool</span>
+    </header>
+
+    <main class="container">
+        <section class="hero">
+            <p class="eyebrow">UNDERSTAND YOUR HEALTH REPORT</p>
+            <h1>Make sense of your lab results.</h1>
+            <p class="subtitle">
+                Start by extracting text from a laboratory report.
+                Plain-language explanations will be added next.
+            </p>
+        </section>
+
+        <section class="upload-card">
+            <div class="document-icon">+</div>
+            <h2>Upload your lab report</h2>
+            <p>Select a PDF to extract its readable text.</p>
+
+            <form method="POST" enctype="multipart/form-data">
+                <label class="upload-area" for="report">
+                    <span class="upload-symbol">↑</span>
+                    <strong>Choose a PDF report</strong>
+                    <span>PDF only · Maximum size 10 MB</span>
+                    <input
+                        id="report"
+                        name="report"
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        required
+                    >
+                </label>
+
+                <button type="submit">Extract report text</button>
+            </form>
+
+            <p class="privacy-note">
+                Prototype: the uploaded PDF is processed in memory and is not
+                saved by this application. Avoid uploading real medical
+                records while developing or testing.
+            </p>
+        </section>
+
+        {% if error %}
+        <section class="result-card">
+            <h2>Unable to process the report</h2>
+            <p>{{ error }}</p>
+        </section>
+        {% endif %}
+
+        
+{% if results %}
+<section class="result-card">
+    <p class="eyebrow">RESULTS EXTRACTED</p>
+    <h2>Structured laboratory results</h2>
+    <p class="subtitle">{{ filename }}</p>
+
+    <div class="table-wrapper">
+        <table class="results-table">
+            <thead>
+                <tr>
+                    <th>Test</th>
+                    <th>Result</th>
+                    <th>Reference range</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in results %}
+                <tr>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.value }} {{ item.unit }}</td>
+                    <td>{{ item.low }} – {{ item.high }}</td>
+                    <td>
+                        <span class="result-status
+                            {% if item.status == 'Low' %}low
+                            {% elif item.status == 'High' %}high
+                            {% else %}normal{% endif %}">
+                            {{ item.status }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <p class="privacy-note">
+        Status is calculated using the numeric reference range extracted
+        from the report. Please verify extracted values against the original.
+        This is not a diagnosis.
+    </p>
+</section>
+
+{% elif extracted_text %}
+<section class="result-card">
+    <h2>Text extracted, but results need review</h2>
+    <p>
+        The report text was extracted, but no supported result rows were
+        recognized. The app will not guess the values.
+    </p>
+</section>
+{% endif %}
+
+{% if extracted_text %}
+<details class="result-card">
+    <summary>View raw extracted text</summary>
+    <pre>{{ extracted_text }}</pre>
+</details>
+{% endif %}
+
+
+        <section class="features">
+            <article>
+                <h3>01 · Text extraction</h3>
+                <p>Read selectable text from PDF laboratory reports.</p>
+            </article>
+            <article>
+                <h3>02 · Reference ranges</h3>
+                <p>Next, identify test values and the ranges printed on reports.</p>
+            </article>
+            <article>
+                <h3>03 · Simple explanations</h3>
+                <p>Later, explain results in plain language for educational use.</p>
+            </article>
+        </section>
+
+        <footer>
+            <p>
+                <strong>Important:</strong> This project is for educational
+                purposes only. It does not diagnose conditions or replace
+                professional medical advice.
+            </p>
+        </footer>
+    </main>
+</body>
+</html>

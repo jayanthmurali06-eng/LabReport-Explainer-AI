@@ -1,0 +1,283 @@
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f7fb;
+    color: #172033;
+}
+
+.navbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 22px 8%;
+    background: white;
+    border-bottom: 1px solid #e8ebf2;
+}
+
+.brand {
+    color: #172033;
+    font-size: 19px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.brand span {
+    color: #2675d8;
+}
+
+.status {
+    color: #397052;
+    background: #eaf7ef;
+    border-radius: 20px;
+    padding: 8px 12px;
+    font-size: 12px;
+}
+
+.container {
+    width: min(1000px, 90%);
+    margin: 0 auto;
+}
+
+.hero {
+    padding: 65px 0 30px;
+    text-align: center;
+}
+
+.eyebrow {
+    color: #2675d8;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 2px;
+}
+
+h1 {
+    margin: 15px 0;
+    font-size: clamp(32px, 5vw, 48px);
+    letter-spacing: -1.5px;
+}
+
+.subtitle {
+    max-width: 570px;
+    margin: 0 auto;
+    color: #657087;
+    line-height: 1.7;
+}
+
+.upload-card {
+    max-width: 650px;
+    margin: 20px auto 40px;
+    padding: 32px;
+    text-align: center;
+    background: white;
+    border: 1px solid #e6eaf1;
+    border-radius: 20px;
+    box-shadow: 0 12px 35px #1720330a;
+}
+
+.document-icon {
+    display: grid;
+    place-items: center;
+    width: 45px;
+    height: 45px;
+    margin: 0 auto 15px;
+    color: #2675d8;
+    background: #eaf2ff;
+    border-radius: 13px;
+    font-size: 30px;
+}
+
+.upload-card h2 {
+    margin-bottom: 8px;
+}
+
+.upload-card > p {
+    color: #657087;
+    line-height: 1.6;
+}
+
+.upload-area {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    margin-top: 25px;
+    padding: 28px 15px;
+    border: 2px dashed #c9d8ed;
+    border-radius: 14px;
+    cursor: pointer;
+}
+
+.upload-area:hover {
+    background: #f7faff;
+    border-color: #2675d8;
+}
+
+.upload-symbol {
+    color: #2675d8;
+    font-size: 30px;
+}
+
+.upload-area span:last-of-type {
+    color: #7b8598;
+    font-size: 13px;
+}
+
+input[type="file"] {
+    max-width: 100%;
+    margin-top: 8px;
+}
+
+button {
+    width: 100%;
+    margin-top: 18px;
+    padding: 15px;
+    color: white;
+    background: #2675d8;
+    border: 0;
+    border-radius: 10px;
+    font-size: 15px;
+}
+
+button:disabled {
+    background: #a6bde0;
+    cursor: not-allowed;
+}
+
+.privacy-note {
+    font-size: 12px;
+}
+
+.features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-bottom: 40px;
+}
+
+.features article {
+    padding: 22px;
+    background: white;
+    border: 1px solid #e6eaf1;
+    border-radius: 14px;
+}
+
+.features h3 {
+    font-size: 15px;
+}
+
+.features p {
+    color: #657087;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+footer {
+    padding: 20px 0 35px;
+    color: #657087;
+    font-size: 12px;
+    line-height: 1.7;
+}
+
+@media (max-width: 650px) {
+    .features {
+        grid-template-columns: 1fr;
+    }
+
+    .upload-card {
+        padding: 22px;
+    }
+
+    .navbar {
+        padding: 18px 5%;
+    }
+}
+
+
+.result-card {
+    margin: 25px auto 40px;
+    padding: 28px;
+    background: white;
+    border: 1px solid #e6eaf1;
+    border-radius: 16px;
+    overflow-wrap: anywhere;
+}
+
+.result-card h2 {
+    margin-top: 8px;
+}
+
+.result-card pre {
+    max-height: 500px;
+    overflow: auto;
+    padding: 18px;
+    color: #253047;
+    background: #f5f7fb;
+    border: 1px solid #e6eaf1;
+    border-radius: 10px;
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+
+
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    margin-top: 20px;
+}
+
+.results-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 14px;
+}
+
+.results-table th {
+    padding: 13px 12px;
+    color: white;
+    background: #17365d;
+    white-space: nowrap;
+}
+
+.results-table td {
+    padding: 13px 12px;
+    border-bottom: 1px solid #e6eaf1;
+}
+
+.results-table tbody tr:nth-child(even) {
+    background: #f5f7fb;
+}
+
+.result-status {
+    display: inline-block;
+    padding: 5px 9px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.result-status.low,
+.result-status.high {
+    color: #9f2d25;
+    background: #fdecea;
+}
+
+.result-status.normal {
+    color: #226541;
+    background: #e8f6ed;
+}
+
+details summary {
+    cursor: pointer;
+    font-weight: 600;
+}
