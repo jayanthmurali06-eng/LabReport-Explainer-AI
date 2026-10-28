@@ -1,7 +1,11 @@
 
 from flask import Flask, render_template, request
 from werkzeug.utils import secure_filename
+from rapidocr_onnxruntime import RapidOCR
+from PIL import Image
 import pymupdf
+import numpy as np
+import io
 import re
 
 app = Flask(__name__)
@@ -9,49 +13,108 @@ app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {"pdf"}
 
+# Initialize OCR only when a scanned page actually needs it.
+_ocr_engine = None
+
+
+def get_ocr_engine():
+    global _ocr_engine
+
+    if _ocr_engine is None:
+        _ocr_engine = RapidOCR()
+
+    return _ocr_engine
+
+
+def extract_page_text(page):
+    """Extract text from a normal PDF page in approximate row order."""
+    words = page.get_text("words")
+
+    if not words:
+        return ""
+
+    words.sort(key=lambda word: (word[1], word[0]))
+    lines = []
+
+    for word in words:
+        x0, y0, x1, y1, text = word[:5]
+        placed = False
+
+        for line in lines:
+            if abs(line["y"] - y0) <= 3:
+                line["words"].append((x0, text))
+                placed = True
+                break
+
+        if not placed:
+            lines.append({"y": y0, "words": [(x0, text)]})
+
+    lines.sort(key=lambda line: line["y"])
+    page_lines = []
+
+    for line in lines:
+        line["words"].sort(key=lambda item: item[0])
+        page_lines.append(
+            " ".join(text for _, text in line["words"])
+        )
+
+    return "\n".join(page_lines).strip()
+
+
+def extract_page_ocr(page):
+    """Render a scanned PDF page and recognize its text with RapidOCR."""
+    # Render at 2x resolution to improve OCR readability.
+    pix = page.get_pixmap(
+        matrix=pymupdf.Matrix(2, 2),
+        alpha=False,
+    )
+
+    image = Image.frombytes(
+        "RGB",
+        (pix.width, pix.height),
+        pix.samples,
+    )
+
+    image_array = np.array(image)
+    ocr_result, _ = get_ocr_engine()(image_array)
+
+    if not ocr_result:
+        return ""
+
+    # RapidOCR returns detected text items with bounding boxes and scores.
+    recognized_lines = []
+
+    for item in ocr_result:
+        if len(item) >= 2 and item[1]:
+            recognized_lines.append(str(item[1]))
+
+    return "\n".join(recognized_lines).strip()
+
 
 def extract_pdf_text(file_bytes):
-    """Extract PDF text while preserving approximate visual row order."""
+    """
+    Extract text from normal PDFs and use OCR for scanned or
+    mostly image-based pages.
+    """
     pages_text = []
 
     with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
+        if pdf.page_count == 0:
+            raise ValueError("The PDF contains no pages.")
+
         for page_number, page in enumerate(pdf, start=1):
-            words = page.get_text("words")
-            if not words:
-                continue
+            page_text = extract_page_text(page)
 
-            # Group words by their vertical position, then sort left to right.
-            words.sort(key=lambda word: (word[1], word[0]))
-            lines = []
+            # Use OCR if native text extraction finds little text.
+            if len(page_text.strip()) < 20:
+                page_text = extract_page_ocr(page)
 
-            for word in words:
-                x0, y0, x1, y1, text = word[:5]
-                placed = False
-
-                for line in lines:
-                    if abs(line["y"] - y0) <= 3:
-                        line["words"].append((x0, text))
-                        placed = True
-                        break
-
-                if not placed:
-                    lines.append({"y": y0, "words": [(x0, text)]})
-
-            lines.sort(key=lambda line: line["y"])
-            page_lines = []
-
-            for line in lines:
-                line["words"].sort(key=lambda item: item[0])
-                page_lines.append(
-                    " ".join(text for _, text in line["words"])
+            if page_text:
+                pages_text.append(
+                    f"--- Page {page_number} ---\n{page_text}"
                 )
 
-            page_text = "\n".join(page_lines).strip()
-            if page_text:
-                pages_text.append(f"--- Page {page_number} ---\n{page_text}")
-
     return "\n\n".join(pages_text)
-
 
 
 def parse_lab_results(text):
@@ -137,19 +200,28 @@ def home():
 
                     if not file_bytes:
                         error = "The selected file is empty."
+
                     elif not file_bytes.startswith(b"%PDF-"):
                         error = "This file does not appear to be a valid PDF."
+
                     else:
                         extracted_text = extract_pdf_text(file_bytes)
-                        results = parse_lab_results(extracted_text)
 
-                        if not extracted_text:
-                            error = "No readable text was found in this PDF."
+                        if extracted_text:
+                            results = parse_lab_results(extracted_text)
+                        else:
+                            error = (
+                                "No readable text could be extracted. "
+                                "Try a clearer scan or a higher-quality PDF."
+                            )
 
                 except Exception:
+                    app.logger.exception("PDF extraction or OCR failed")
+                    extracted_text = None
+                    results = []
                     error = (
-                        "We couldn't read this PDF. Please try another "
-                        "valid PDF file."
+                        "We couldn't process this PDF. Please try another "
+                        "valid PDF or a clearer scan."
                     )
 
     return render_template(
@@ -168,3 +240,4 @@ def file_too_large(error):
 
 if __name__ == "__main__":
     app.run(debug=True)
+
