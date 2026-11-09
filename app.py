@@ -1,243 +1,515 @@
 
-from flask import Flask, render_template, request
-from werkzeug.utils import secure_filename
-from rapidocr_onnxruntime import RapidOCR
-from PIL import Image
+import os
+import re
+import io
+
 import pymupdf
 import numpy as np
-import io
-import re
+
+from PIL import Image
+from flask import Flask, render_template, request
+from werkzeug.utils import secure_filename
+
+
+# ---------------------------------------
+# FLASK CONFIGURATION
+# ---------------------------------------
 
 app = Flask(__name__)
+
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {"pdf"}
 
-# Initialize OCR only when a scanned page actually needs it.
+
+# ---------------------------------------
+# LAB TEST EXPLANATIONS - DAY 3
+# ---------------------------------------
+
+LAB_EXPLANATIONS = {
+    "hemoglobin": (
+        "Hemoglobin is a protein in red blood cells "
+        "that carries oxygen throughout the body."
+    ),
+
+    "glucose": (
+        "Glucose is blood sugar that provides energy "
+        "to the body's cells."
+    ),
+
+    "creatinine": (
+        "Creatinine is a waste product commonly measured "
+        "to assess kidney function."
+    ),
+
+    "urea": (
+        "Urea is a waste product formed when the body "
+        "breaks down protein."
+    ),
+
+    "cholesterol": (
+        "Cholesterol is a fatty substance in the blood "
+        "that helps build healthy cells."
+    ),
+
+    "platelets": (
+        "Platelets are blood components that help blood "
+        "clot and stop bleeding."
+    ),
+
+    "wbc": (
+        "White blood cells help the body fight infections."
+    ),
+
+    "rbc": (
+        "Red blood cells carry oxygen from the lungs "
+        "to different parts of the body."
+    ),
+
+    "tsh": (
+        "TSH is a hormone that helps regulate "
+        "thyroid gland activity."
+    ),
+
+    "vitamin d": (
+        "Vitamin D helps the body absorb calcium "
+        "and maintain healthy bones."
+    ),
+
+    "vitamin b12": (
+        "Vitamin B12 supports nerve function and "
+        "red blood cell production."
+    ),
+
+    "calcium": (
+        "Calcium is a mineral important for bones, "
+        "teeth, muscles and nerve function."
+    ),
+
+    "bilirubin": (
+        "Bilirubin is a yellow substance produced "
+        "when red blood cells break down."
+    ),
+
+    "albumin": (
+        "Albumin is a protein in the blood that helps "
+        "maintain fluid balance."
+    ),
+
+    "sodium": (
+        "Sodium is an electrolyte that helps regulate "
+        "fluid balance and nerve function."
+    ),
+
+    "potassium": (
+        "Potassium is an electrolyte important for "
+        "muscle and heart function."
+    ),
+
+    "hba1c": (
+        "HbA1c gives an estimate of average blood "
+        "glucose levels over approximately three months."
+    ),
+
+    "esr": (
+        "ESR is a blood test that can help identify "
+        "inflammation in the body."
+    ),
+
+    "crp": (
+        "CRP is a protein that can increase when "
+        "there is inflammation in the body."
+    ),
+    "white blood cells": (
+        "White blood cells help the immune system "
+        "fight infections and protect the body."
+    ),
+
+    "mcv": (
+        "MCV measures the average size of red blood cells."
+    ),
+
+    "hematocrit": (
+        "Hematocrit measures the percentage of blood "
+        "volume made up of red blood cells."
+    ),
+}
+
+
+def get_explanation(test_name):
+    name = test_name.lower().strip()
+
+    for test, explanation in LAB_EXPLANATIONS.items():
+        if test in name:
+            return explanation
+
+    return (
+        "This test measures a specific component of the body. "
+        "Consult a healthcare professional for interpretation."
+    )
+
+
+# ---------------------------------------
+# DAY 1 - PDF TEXT EXTRACTION
+# ---------------------------------------
+
+def extract_pdf_text(pdf_document):
+
+    extracted_pages = []
+
+    for page_number, page in enumerate(pdf_document, start=1):
+
+        words = page.get_text("words")
+
+        # Sort words according to vertical and horizontal position
+        words = sorted(words, key=lambda word: (round(word[1], 1), word[0]))
+
+        native_text = " ".join(word[4] for word in words)
+
+        extracted_pages.append(
+            f"--- Page {page_number} ---\n{native_text}"
+        )
+
+    return "\n\n".join(extracted_pages)
+
+
+# ---------------------------------------
+# DAY 2 - OCR SUPPORT USING RAPIDOCR
+# ---------------------------------------
+
 _ocr_engine = None
 
 
 def get_ocr_engine():
+
     global _ocr_engine
 
     if _ocr_engine is None:
+        from rapidocr_onnxruntime import RapidOCR
         _ocr_engine = RapidOCR()
 
     return _ocr_engine
 
 
-def extract_page_text(page):
-    """Extract text from a normal PDF page in approximate row order."""
-    words = page.get_text("words")
+def extract_ocr_text(page):
 
-    if not words:
-        return ""
-
-    words.sort(key=lambda word: (word[1], word[0]))
-    lines = []
-
-    for word in words:
-        x0, y0, x1, y1, text = word[:5]
-        placed = False
-
-        for line in lines:
-            if abs(line["y"] - y0) <= 3:
-                line["words"].append((x0, text))
-                placed = True
-                break
-
-        if not placed:
-            lines.append({"y": y0, "words": [(x0, text)]})
-
-    lines.sort(key=lambda line: line["y"])
-    page_lines = []
-
-    for line in lines:
-        line["words"].sort(key=lambda item: item[0])
-        page_lines.append(
-            " ".join(text for _, text in line["words"])
-        )
-
-    return "\n".join(page_lines).strip()
-
-
-def extract_page_ocr(page):
-    """Render a scanned PDF page and recognize its text with RapidOCR."""
-    # Render at 2x resolution to improve OCR readability.
+    # Convert PDF page into an image
     pix = page.get_pixmap(
         matrix=pymupdf.Matrix(2, 2),
-        alpha=False,
+        alpha=False
     )
 
-    image = Image.frombytes(
-        "RGB",
-        (pix.width, pix.height),
-        pix.samples,
-    )
+    image_bytes = pix.tobytes("png")
 
-    image_array = np.array(image)
-    ocr_result, _ = get_ocr_engine()(image_array)
+    image = Image.open(
+        io.BytesIO(image_bytes)
+    ).convert("RGB")
 
-    if not ocr_result:
-        return ""
+    image_array = np.asarray(image)
 
-    # RapidOCR returns detected text items with bounding boxes and scores.
-    recognized_lines = []
+    # Perform OCR
+    ocr_engine = get_ocr_engine()
 
-    for item in ocr_result:
-        if len(item) >= 2 and item[1]:
-            recognized_lines.append(str(item[1]))
+    result, _ = ocr_engine(image_array)
 
-    return "\n".join(recognized_lines).strip()
+    extracted_words = []
 
+    if result:
 
-def extract_pdf_text(file_bytes):
-    """
-    Extract text from normal PDFs and use OCR for scanned or
-    mostly image-based pages.
-    """
-    pages_text = []
+        for item in result:
 
-    with pymupdf.open(stream=file_bytes, filetype="pdf") as pdf:
-        if pdf.page_count == 0:
-            raise ValueError("The PDF contains no pages.")
+            text = item[1]
 
-        for page_number, page in enumerate(pdf, start=1):
-            page_text = extract_page_text(page)
+            if text:
+                extracted_words.append(text)
 
-            # Use OCR if native text extraction finds little text.
-            if len(page_text.strip()) < 20:
-                page_text = extract_page_ocr(page)
-
-            if page_text:
-                pages_text.append(
-                    f"--- Page {page_number} ---\n{page_text}"
-                )
-
-    return "\n\n".join(pages_text)
+    return " ".join(extracted_words)
 
 
-def parse_lab_results(text):
-    """Parse supported lab rows and compare values with printed ranges."""
+def extract_text_with_ocr(pdf_document):
+
+    extracted_pages = []
+
+    for page_number, page in enumerate(pdf_document, start=1):
+
+        words = page.get_text("words")
+
+        words = sorted(
+            words,
+            key=lambda word: (round(word[1], 1), word[0])
+        )
+
+        words = page.get_text("words", sort=True)
+
+        lines = {}
+
+        for word in words:
+            line_key = (word[5], word[6])
+            lines.setdefault(line_key, []).append(word)
+
+        native_text = "\n".join(
+            " ".join(word[4] for word in line_words)
+            for line_words in lines.values()
+        ).strip()
+
+        # Use OCR if the page contains very little native text
+        if len(native_text) < 20:
+
+            try:
+                page_text = extract_ocr_text(page)
+
+            except Exception as e:
+                print(f"OCR error on page {page_number}: {e}")
+                page_text = native_text
+
+        else:
+            page_text = native_text
+
+        extracted_pages.append(
+            f"--- Page {page_number} ---\n{page_text}"
+        )
+
+    return "\n\n".join(extracted_pages)
+
+
+# ---------------------------------------
+# DAY 3 - LAB RESULT EXTRACTION
+# ---------------------------------------
+
+
+def parse_lab_results_from_pdf(pdf_document):
+
     results = []
 
-    row_pattern = re.compile(
-        r"^(?P<name>.+?)\s+"
-        r"(?P<value>-?\d+(?:\.\d+)?)\s+"
-        r"(?P<unit>\S+)\s+"
-        r"(?P<low>-?\d+(?:\.\d+)?)\s*[-–]\s*"
-        r"(?P<high>-?\d+(?:\.\d+)?)"
-        r"(?:\s+(?:LOW|L|HIGH|H|NORMAL|N|IN\s+RANGE))?$",
-        re.IGNORECASE,
-    )
+    for page in pdf_document:
 
-    ignored_names = {
-        "test", "result", "unit", "reference", "range", "flag",
-        "patient", "sample", "age", "collected", "specimen", "status",
-    }
+        words = page.get_text("words", sort=True)
 
-    for line in text.splitlines():
-        line = line.strip()
-        match = row_pattern.match(line)
-
-        if not match:
+        if not words:
             continue
 
-        name = match.group("name").strip()
+        # Group words by their vertical position
+        rows = {}
 
-        if name.lower() in ignored_names:
-            continue
+        for word in words:
+            x0, y0, x1, y1, text = word[:5]
 
-        try:
-            value = float(match.group("value"))
-            low = float(match.group("low"))
-            high = float(match.group("high"))
-        except ValueError:
-            continue
+            row_key = round(y0 / 3)
 
-        if low > high:
-            continue
+            rows.setdefault(row_key, []).append(word)
 
-        if value < low:
-            status = "Low"
-        elif value > high:
-            status = "High"
-        else:
-            status = "Within range"
+        for row_words in rows.values():
 
-        results.append({
-            "name": name,
-            "value": match.group("value"),
-            "unit": match.group("unit"),
-            "low": match.group("low"),
-            "high": match.group("high"),
-            "status": status,
-        })
+            row_words.sort(key=lambda w: w[0])
+
+            # Identify columns using their horizontal positions
+            test_words = []
+            value_words = []
+            unit_words = []
+            range_words = []
+
+            for word in row_words:
+
+                x0 = word[0]
+                text = word[4]
+
+                if 80 <= x0 < 220:
+                    test_words.append(text)
+
+                elif 220 <= x0 < 290:
+                    value_words.append(text)
+
+                elif 290 <= x0 < 350:
+                    unit_words.append(text)
+
+                elif 350 <= x0 < 445:
+                    range_words.append(text)
+
+            test_name = " ".join(test_words).strip()
+            value_text = " ".join(value_words).strip()
+            unit = " ".join(unit_words).strip()
+            reference = " ".join(range_words).strip()
+
+            # Ignore headings and incomplete rows
+            if not test_name or not value_text or not reference:
+                continue
+
+            # Check numeric result
+            value_match = re.search(
+                r"-?\d+(?:\.\d+)?",
+                value_text
+            )
+
+            # Check reference range
+            range_match = re.search(
+                r"(-?\d+(?:\.\d+)?)\s*[-–]\s*"
+                r"(-?\d+(?:\.\d+)?)",
+                reference
+            )
+
+            if not value_match or not range_match:
+                continue
+
+            value = float(value_match.group(0))
+            low = float(range_match.group(1))
+            high = float(range_match.group(2))
+
+            if low > high:
+                continue
+
+            if value < low:
+                status = "Low"
+
+            elif value > high:
+                status = "High"
+
+            else:
+                status = "Within range"
+
+            results.append({
+
+                "name": test_name,
+
+                "value": value_match.group(0),
+
+                "unit": unit,
+
+                "low": low,
+
+                "high": high,
+
+                "status": status,
+
+                "explanation": get_explanation(test_name)
+
+            })
 
     return results
 
 
+# ---------------------------------------
+# FILE VALIDATION
+# ---------------------------------------
+
+def allowed_file(filename):
+
+    return (
+        "." in filename
+        and filename.rsplit(".", 1)[1].lower()
+        in ALLOWED_EXTENSIONS
+    )
+
+
+# ---------------------------------------
+# MAIN FLASK ROUTE
+# ---------------------------------------
+
 @app.route("/", methods=["GET", "POST"])
-def home():
+def index():
+
     extracted_text = None
     results = []
     error = None
     filename = None
 
     if request.method == "POST":
-        uploaded_file = request.files.get("report")
 
-        if not uploaded_file or not uploaded_file.filename:
-            error = "Please select a PDF lab report first."
+        if "report" not in request.files:
+
+            error = "No file selected."
+
+            return render_template(
+                "index.html",
+                extracted_text=extracted_text,
+                results=results,
+                error=error,
+                filename=filename
+            )
+
+        file = request.files["report"]
+
+        if file.filename == "":
+
+            error = "Please select a PDF file."
+
+        elif not allowed_file(file.filename):
+
+            error = "Only PDF files are allowed."
+
         else:
-            filename = secure_filename(uploaded_file.filename)
 
-            if not filename or not filename.lower().endswith(".pdf"):
-                error = "Please upload a PDF file."
-            else:
+            filename = secure_filename(file.filename)
+
+            try:
+
+                # Read PDF into memory
+                pdf_bytes = file.read()
+
+                if not pdf_bytes.startswith(b"%PDF-"):
+                    raise ValueError("Invalid PDF file.")
+
+                pdf_document = pymupdf.open(
+                    stream=pdf_bytes,
+                    filetype="pdf"
+                )
+
                 try:
-                    file_bytes = uploaded_file.read()
 
-                    if not file_bytes:
-                        error = "The selected file is empty."
-
-                    elif not file_bytes.startswith(b"%PDF-"):
-                        error = "This file does not appear to be a valid PDF."
-
-                    else:
-                        extracted_text = extract_pdf_text(file_bytes)
-
-                        if extracted_text:
-                            results = parse_lab_results(extracted_text)
-                        else:
-                            error = (
-                                "No readable text could be extracted. "
-                                "Try a clearer scan or a higher-quality PDF."
-                            )
-
-                except Exception:
-                    app.logger.exception("PDF extraction or OCR failed")
-                    extracted_text = None
-                    results = []
-                    error = (
-                        "We couldn't process this PDF. Please try another "
-                        "valid PDF or a clearer scan."
+                    # Extract text with OCR fallback
+                    extracted_text = extract_text_with_ocr(
+                        pdf_document
                     )
+
+                    # Extract laboratory results
+                    results = parse_lab_results_from_pdf(
+                        pdf_document
+                    )
+
+                finally:
+                    pdf_document.close()
+
+            except Exception as e:
+
+                print("Processing error:", e)
+
+                error = (
+                    "Unable to process this PDF. "
+                    "Please upload a valid and readable lab report."
+                )
 
     return render_template(
         "index.html",
         extracted_text=extracted_text,
         results=results,
         error=error,
-        filename=filename,
+        filename=filename
     )
 
 
+# ---------------------------------------
+# FILE SIZE ERROR HANDLER
+# ---------------------------------------
+
 @app.errorhandler(413)
 def file_too_large(error):
-    return "File too large. Please upload a PDF smaller than 10 MB.", 413
 
+    return render_template(
+        "index.html",
+        extracted_text=None,
+        results=[],
+        error="File is too large. Maximum upload size is 10 MB.",
+        filename=None
+    ), 413
+
+
+# ---------------------------------------
+# RUN APPLICATION
+# ---------------------------------------
 
 if __name__ == "__main__":
-    app.run(debug=True)
 
+    app.run(
+        debug=True,
+        host="127.0.0.1",
+        port=5000
+    )
